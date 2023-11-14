@@ -6,8 +6,8 @@ fn main() {
 
 /* == BytePacketBuffer == */
 
-//type Error = Box<dyn std::error::Error>;
-//type Result<T> = std::result::Result<T, Error>;
+type Error = Box<dyn std::error::Error>;
+type Result<T> = std::result::Result<T, Error>;
 
 pub struct BytePacketBuffer {
     pub buf: [u8; 512],
@@ -25,7 +25,6 @@ impl BytePacketBuffer {
         }
     }
 
-    /*
     /// Current position within the buffer
     fn pos(&self) -> usize {
         self.pos
@@ -50,10 +49,9 @@ impl BytePacketBuffer {
 
         Err("Out of buffer".into())
     }
-    */
 
     /// Read a single byte and step forward
-    fn read(&mut self) -> Result<u8, &str> {
+    fn read(&mut self) -> Result<u8> {
         if self.pos >= 512 {
             return Err("End of buffer".into());
         }
@@ -63,7 +61,6 @@ impl BytePacketBuffer {
         Ok(res)
     }
 
-    /*
     /// Get a single byte
     fn get(&self, pos: usize) -> Result<u8> {
         if pos >= 512 {
@@ -79,16 +76,14 @@ impl BytePacketBuffer {
         }
         Ok(&self.buf[start..start + len])
     }
-    */
 
     /// Read two bytes, stepping two steps forward
-    fn read_u16(&mut self) -> Result<u16, &str> {
+    fn read_u16(&mut self) -> Result<u16> {
         let res = ((self.read()? as u16) << 8) | (self.read()? as u16);
 
         Ok(res)
     }
 
-    /*
     fn read_u32(&mut self) -> Result<u32> {
         let res = ((self.read()? as u32) << 24)
             | ((self.read()? as u32) << 16)
@@ -97,7 +92,6 @@ impl BytePacketBuffer {
 
         Ok(res)
     }
-    */
 }
 
 
