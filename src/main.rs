@@ -23,27 +23,29 @@ type Result<T> = std::result::Result<T, Error>;
 /// Stub resolver with UDP socket that does most of the work
 fn main() -> Result<()> {
 
-    let mut qname: &str;
-    let args: Vec<_> = args().collect();
+    let port = 2053;
+    let socket = UdpSocket::bind(("0.0.0.0", port))?;
+    println!("Server started ad port: {}", port);
     
-    if args.len() > 1 {
-        qname = args[1].as_str(); 
-    } else {
-        qname = "www.yahoo.com";
+    loop {
+        match handle_query(&socket) {
+            Ok(_) => {},
+            Err(e) => eprintln!("Error: {}", e),
+        }
     }
-    let qtype = QueryType::A;
-    let qtype = QueryType::MX;
+}
 
-    // Using google public DNS server
+fn lookup(qname: &str, qtype: QueryType) -> Result<DnsPacket> {
+    // Forward requests to Google's public DNS server
     let server = ("8.8.8.8", 53);
 
     // Bind UDP socket to arbitrary port
     let socket = UdpSocket::bind(("0.0.0.0", 43210))?;
 
-    // Build our query packet. It's important that we remember to set the
-    // `recursion_desired` flag. As noted earlier, the packet id is arbitrary.
     let mut packet = DnsPacket::new();
 
+    // Build our query packet. It's important that we remember to set the
+    // `recursion_desired` flag. The packet id is arbitrary.
     packet.header.id = 6666;
     packet.header.questions = 1;
     packet.header.recursion_desired = true;
@@ -52,7 +54,6 @@ fn main() -> Result<()> {
     // Write packet to a buffer
     let mut req_buffer = BytePacketBuffer::new();
     packet.write(&mut req_buffer)?;
-
     // Send it to the server using our socket:
     socket.send_to(&req_buffer.buf[0..req_buffer.pos], server)?;
 
@@ -61,42 +62,64 @@ fn main() -> Result<()> {
     let mut res_buffer = BytePacketBuffer::new();
     socket.recv_from(&mut res_buffer.buf)?;
 
-    // As per the previous section, `DnsPacket::from_buffer()` is then used to
+    // `DnsPacket::from_buffer()` is then used to
     // actually parse the packet after which we can print the response.
+    DnsPacket::from_buffer(&mut res_buffer)
+}
 
-    let packet = DnsPacket::from_buffer(&mut res_buffer)?;
-    println!("{:#?}", packet.header);
+/// Handle a single incoming packet
+fn handle_query(socket: &UdpSocket) -> Result<()> {
 
-    println!("\nQuestions:");
-    for q in packet.questions {
-        println!("{:#?}", q);
+
+    let mut req_buffer = BytePacketBuffer::new();
+
+    // 'rcv_from()' will wait for a request and put it into the buffer
+    // The function returns (data_lenght, source_address), whe are not interested
+    // in the data_lenght
+    let (_, src) = socket.recv_from(&mut req_buffer.buf)?;
+
+    // Parse the request
+    let mut request = DnsPacket::from_buffer(&mut req_buffer)?;
+    
+    // Create and initialzie response packet
+    let mut response = DnsPacket::new();
+    response.header.id = request.header.id;
+    response.header.recursion_desired = true;
+    response.header.recursion_available = true;
+    response.header.response = true;
+
+    if let Some(question) = request.questions.pop() {
+        println!("Received query: {:?}", question);
+
+        if let Ok(result) = lookup(&question.name, question.qtype) {
+            response.questions.push(question);
+            response.header.rescode = result.header.rescode;
+
+            for res in result.answers {
+                println!("Answer: {:?}", res);
+                response.answers.push(res);
+            }
+            for res in result.authorities {
+                println!("Authorities: {:?}", res);
+                response.authorities.push(res);
+            }
+            for res in result.resources {
+                println!("Resources: {:?}", res);
+                response.resources.push(res);
+            }
+        }
     }
-    println!("\nAnswers:");
-    for a in packet.answers {
-        println!("{:#?}", a);
+    else {
+        response.header.rescode = ResultCode::SERVFAIL;
     }
-    println!("\nAuthorities:");
-    for a in packet.authorities {
-        println!("{:#?}", a);
-    }
-    println!("\nResources:");
-    for r in packet.resources {
-        println!("{:#?}", r);
-    }
+    
+    let mut res_buffer = BytePacketBuffer::new();
+    response.write(&mut res_buffer)?;
+
+    let len = res_buffer.pos();
+    let data = res_buffer.get_range(0, len)?;
+
+    socket.send_to(data, src)?;
 
     Ok(())
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
